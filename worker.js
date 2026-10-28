@@ -22,70 +22,46 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    if (url.pathname !== "/ws") {
-      return new Response(
-        "PROFILE CLASH Multiplayer-Server",
-        { status: 200 }
-      );
-    }
+    // 1. WebSocket immer zuerst
+    if (url.pathname === "/ws") {
+      if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
+        return new Response("WebSocket erforderlich.", { status: 426 });
+      }
+      const mode = url.searchParams.get("mode");
+      let code = (url.searchParams.get("room") || "").toUpperCase();
 
-    if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
-      return new Response("WebSocket erforderlich.", {
-        status: 426
-      });
-    }
+      if (!["create", "join"].includes(mode)) {
+        return new Response("Ungültiger Verbindungsmodus.", { status: 400 });
+      }
 
-    const mode = url.searchParams.get("mode");
-    let code = (url.searchParams.get("room") || "").toUpperCase();
-
-    if (!["create", "join"].includes(mode)) {
-      return new Response("Ungültiger Verbindungsmodus.", {
-        status: 400
-      });
-    }
-
-    if (mode === "create") {
-      // Neuen, möglichst eindeutigen Lobby-Code erzeugen.
-      let found = false;
-
-      for (let attempt = 0; attempt < 10; attempt++) {
-        code = createRoomCode();
-
-        const id = env.ROOMS.idFromName(code);
-        const room = env.ROOMS.get(id);
-
-        const response = await room.fetch(
-          "https://internal/_exists"
-        );
-
-        const result = await response.json();
-
-        if (!result.exists) {
-          found = true;
-          break;
+      if (mode === "create") {
+        let found = false;
+        for (let attempt = 0; attempt < 10; attempt++) {
+          code = createRoomCode();
+          const id = env.ROOMS.idFromName(code);
+          const room = env.ROOMS.get(id);
+          const response = await room.fetch(new Request("https://internal/_exists"));
+          const result = await response.json();
+          if (!result.exists) { found = true; break; }
         }
+        if (!found) return new Response("Keine freie Lobby.", { status: 503 });
+      } else if (!/^[A-Z0-9]{6}$/.test(code)) {
+        return new Response("Ungültiger Lobby-Code.", { status: 400 });
       }
 
-      if (!found) {
-        return new Response(
-          "Es konnte keine freie Lobby erstellt werden.",
-          { status: 503 }
-        );
-      }
-    } else if (!/^[A-Z0-9]{6}$/.test(code)) {
-      return new Response("Ungültiger Lobby-Code.", {
-        status: 400
-      });
+      const id = env.ROOMS.idFromName(code);
+      const room = env.ROOMS.get(id);
+      const target = new URL(request.url);
+      target.searchParams.set("room", code);
+      return room.fetch(new Request(target.toString(), request));
     }
 
-    const id = env.ROOMS.idFromName(code);
-    const room = env.ROOMS.get(id);
+    // 2. Assets danach - WICHTIG!
+    if (env.ASSETS) {
+      return env.ASSETS.fetch(request);
+    }
 
-    // Anfrage an das Durable Object der jeweiligen Lobby weiterleiten.
-    const target = new URL(request.url);
-    target.searchParams.set("room", code);
-
-    return room.fetch(new Request(target.toString(), request));
+    return new Response("PROFILE CLASH Multiplayer-Server", { status: 200 });
   }
 };
 
