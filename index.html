@@ -77,13 +77,14 @@ function connect(mode,code){
   saveUsername(username); if(socket) disconnect();
   const base = getWsUrl(); const url=new URL(base);
   url.searchParams.set("room",code||""); url.searchParams.set("username",username); url.searchParams.set("clientId",clientId); url.searchParams.set("mode",mode);
-  setConnection(false,"Verbinde ...");
-  try{socket=new WebSocket(url.toString())}catch{setConnection(false,"Fehler");toast("Verbindung fehlgeschlagen.");return}
+  setConnection(false,"Verbinde zu " + base + " ...");
+  console.log("Verbinde zu:", url.toString());
+  try{socket=new WebSocket(url.toString())}catch(e){setConnection(false,"Fehler: "+e);toast("Fehler: "+e.message);return}
   const active=socket;
-  active.onopen=()=>setConnection(true,"Verbunden - "+WORKER_URL);
-  active.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch{toast("Ungültige Server-Daten.");return} handleServerMessage(m)};
-  active.onerror=()=>{if(socket===active) setConnection(false,"Verbindungsfehler")};
-  active.onclose=ev=>{if(socket!==active) return; setConnection(false,"Nicht verbunden"); if(ev.code!==1000) toast("Verbindung unterbrochen.")};
+  active.onopen=()=>{ setConnection(true,"Verbunden!"); console.log("WS OPEN"); };
+  active.onmessage=e=>{ let m; try{m=JSON.parse(e.data)}catch{return} handleServerMessage(m) };
+  active.onerror=(e)=>{ console.log("WS ERROR", e); setConnection(false,"Fehler beim Verbinden"); toast("Fehler beim Verbinden - siehe F12 Konsole") };
+  active.onclose=ev=>{ console.log("WS CLOSE", ev.code, ev.reason); if(socket!==active) return; setConnection(false,"Getrennt: Code "+ev.code+" "+ev.reason); if(ev.code!==1000) toast("Getrennt Code "+ev.code+" Grund: "+ev.reason) };
 }
 function handleServerMessage(m){ if(m.type==="error"){toast(m.message||"Fehler.");return} if(m.type==="state"){ if(!m.state) return; state=m.state; isHost=state.hostId===clientId; renderState(); return} if(m.type==="connected"){toast("Verbunden mit Lobby.")} }
 function renderState(){
